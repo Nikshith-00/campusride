@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CampusRide - Where is my bus?</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box}html,body{height:100%;margin:0;font:15px/1.4 "Segoe UI",system-ui,sans-serif;color:#1c2a33}
+body{display:flex;flex-direction:column}
+header{background:#1c2a33;color:#f3f1ea;padding:12px 16px;font-size:19px;font-weight:700}header span{color:#f2b705}
+#map{flex:1;min-height:200px}
+#panel{max-height:38%;overflow-y:auto;background:#fffdf8;border-top:1px solid #ddd8c9;padding:8px 14px}
+.b{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #ddd8c9;cursor:pointer}
+.b small{display:block;color:#5f6f7a}.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px}
+.pin{width:30px;height:30px;border-radius:50%;background:#f2b705;border:3px solid #1c2a33;color:#1c2a33;font-weight:700;display:flex;align-items:center;justify-content:center}
+.pin.off{background:#8b949b}
+</style></head><body>
+<header>Campus<span>Ride</span></header>
+<div id="map"></div>
+<div id="panel"><div id="list">Looking for buses…</div></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getDatabase,ref,onValue} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import {firebaseConfig} from "./firebase-config.js";
+const db=getDatabase(initializeApp(firebaseConfig));
+const map=L.map("map").setView([20.59,78.96],5);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"&copy; OpenStreetMap contributors"}).addTo(map);
+const STALE=30000,markers={};let data={},fitted=false;
+function render(){
+  const ids=Object.keys(data).sort((a,b)=>data[a].n-data[b].n),list=document.getElementById("list");
+  list.textContent=ids.length?"":"No buses are sharing right now.";
+  ids.forEach(k=>{
+    const b=data[k],off=Date.now()-b.ts>STALE,sec=Math.round((Date.now()-b.ts)/1000);
+    const ll=[b.lat,b.lng];
+    if(!markers[k])markers[k]=L.marker(ll).addTo(map);
+    markers[k].setLatLng(ll).setIcon(L.divIcon({className:"",iconSize:[30,30],html:`<div class="pin${off?" off":""}">${b.n}</div>`}));
+    const row=document.createElement("div");row.className="b";
+    const left=document.createElement("span");
+    left.innerHTML=`<i class="dot" style="background:${off?"#8b949b":"#2f8f5b"}"></i>`;
+    left.append(`Bus ${String(b.n).padStart(2,"0")} · Route ${b.r}`);
+    const s=document.createElement("small");
+    s.textContent=off?"Offline":`${b.kmh==null?"":b.kmh+" km/h · "}${sec<60?sec+"s":Math.round(sec/60)+"m"} ago`;
+    left.appendChild(s);row.appendChild(left);
+    row.onclick=()=>map.flyTo(ll,16);list.appendChild(row);
+  });
+  Object.keys(markers).forEach(k=>{if(!data[k]){markers[k].remove();delete markers[k]}});
+  if(ids.length&&!fitted){fitted=true;map.fitBounds(ids.map(k=>[data[k].lat,data[k].lng]),{maxZoom:16,padding:[40,40]})}
+}
+onValue(ref(db,"buses"),s=>{data=s.val()||{};render()},()=>{document.getElementById("list").textContent="Can't load buses. Check the Firebase setup."});
+setInterval(render,5000);
+</script></body></html>

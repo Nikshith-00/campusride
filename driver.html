@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CampusRide Driver</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f1ea;color:#1c2a33;font:16px/1.4 "Segoe UI",system-ui,sans-serif}
+header{background:#1c2a33;color:#f3f1ea;padding:12px 16px;font-size:19px;font-weight:700}header span{color:#f2b705}
+main{max-width:460px;margin:0 auto;padding:16px}.box{background:#fffdf8;border:1px solid #ddd8c9;border-radius:8px;padding:14px}
+label{display:block;margin-bottom:10px;color:#5f6f7a;font-size:13px}
+input,select{display:block;width:100%;margin-top:4px;padding:11px;border:1px solid #ddd8c9;border-radius:6px;font:inherit}
+button{width:100%;padding:15px;border:0;border-radius:8px;background:#f2b705;color:#1c2a33;font:inherit;font-size:17px;font-weight:700;cursor:pointer}
+button.stop{background:#c8372d;color:#fff}.msg{margin-top:10px;color:#5f6f7a}.hide{display:none}
+</style></head><body>
+<header>Campus<span>Ride</span> Driver</header>
+<main>
+<div class="box" id="login"><label>Driver email<input id="em" type="email" autocomplete="username"></label>
+<label>Password<input id="pw" type="password" autocomplete="current-password"></label>
+<button id="in">Sign in</button><div class="msg" id="lmsg"></div></div>
+<div class="box hide" id="share">
+<label>Bus number<select id="num"></select></label>
+<label>Route<select id="route"><option>A</option><option>B</option><option>C</option></select></label>
+<button id="go">Start sharing</button><div class="msg" id="msg">Keep this page open and the screen on while driving.</div></div>
+</main>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getDatabase,ref,set} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+import {getAuth,signInWithEmailAndPassword,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {firebaseConfig} from "./firebase-config.js";
+const app=initializeApp(firebaseConfig),db=getDatabase(app),auth=getAuth(app),$=i=>document.getElementById(i);
+for(let i=1;i<=12;i++)$("num").add(new Option("Bus "+String(i).padStart(2,"0"),i));
+onAuthStateChanged(auth,u=>{$("login").classList.toggle("hide",!!u);$("share").classList.toggle("hide",!u)});
+$("in").onclick=()=>signInWithEmailAndPassword(auth,$("em").value,$("pw").value).catch(()=>{$("lmsg").textContent="Wrong email or password."});
+let watch=null,wake=null,last=0;
+async function stop(){if(watch!==null)navigator.geolocation.clearWatch(watch);watch=null;if(wake){wake.release();wake=null}$("go").textContent="Start sharing";$("go").classList.remove("stop")}
+$("go").onclick=async()=>{
+  if(watch!==null){await stop();$("msg").textContent="Sharing stopped.";return}
+  if(!navigator.geolocation){$("msg").textContent="This browser can't share location.";return}
+  const n=+$("num").value,r=$("route").value;last=0;$("msg").textContent="Waiting for GPS…";
+  try{wake=await navigator.wakeLock.request("screen")}catch(e){}
+  watch=navigator.geolocation.watchPosition(p=>{
+    const now=Date.now();if(now-last<5000)return;last=now;
+    set(ref(db,"buses/bus"+n),{n,r,lat:p.coords.latitude,lng:p.coords.longitude,kmh:p.coords.speed==null?null:Math.round(p.coords.speed*3.6),ts:now})
+      .then(()=>{$("msg").textContent=`Sharing Bus ${n} · Route ${r}. Last update ${new Date(now).toLocaleTimeString()}`})
+      .catch(()=>{$("msg").textContent="Couldn't save location. Check your internet and Firebase rules."});
+  },e=>{stop();$("msg").textContent=e.code===1?"Location permission denied. Allow location for this site and try again.":"Couldn't get a GPS fix. Move to open sky and try again."},{enableHighAccuracy:true,maximumAge:2000,timeout:20000});
+  $("go").textContent="Stop sharing";$("go").classList.add("stop");
+};
+</script></body></html>
